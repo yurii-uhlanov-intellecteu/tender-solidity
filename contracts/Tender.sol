@@ -6,8 +6,8 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import "hardhat/console.sol";
 
 contract Tender is Ownable {
-    uint256 public _submissionEnds;
-    uint256 public _disclosureEnds;
+    uint256 immutable public _submissionEnds;
+    uint256 immutable public _disclosureEnds;
     mapping(address => bytes32) public _submittedHashes;
     mapping(address => uint256) public _disclosedPrices;
     address[] public _disclosedAddresses;
@@ -26,7 +26,7 @@ contract Tender is Ownable {
         require(disclosurePeriod_ != 0, "Disclosure period should be positive");
         
         _submissionEnds = block.timestamp + submissionPeriod_;
-        _disclosureEnds = block.timestamp + submissionPeriod_ + disclosurePeriod_;
+        _disclosureEnds = _submissionEnds + disclosurePeriod_;
     }
 
     function submitHash(bytes32 hash_) external {
@@ -42,7 +42,7 @@ contract Tender is Ownable {
     function disclosePrice(uint256 price_, uint256 salt_) external {
         require(block.timestamp < _disclosureEnds, "Disclosure period has ended");
         require(block.timestamp >= _submissionEnds, "Disclosure period has not started yet");
-        require(price_ > 0, "Invalid price");
+        require(price_ != 0, "Invalid price");
 
         bytes memory bites = new bytes(64);
         assembly { 
@@ -50,11 +50,12 @@ contract Tender is Ownable {
             mstore(add(bites, 64), salt_)
         }
 
-        bytes32 hash = keccak256(bites);
-        if (_submittedHashes[msg.sender] != hash) {
+        if (_submittedHashes[msg.sender] != keccak256(bites)) {
             revert WrongValueForHash();
         }
 
+        // this is recovering 1846 gas!!!
+        _submittedHashes[msg.sender] = 0;
         _disclosedPrices[msg.sender] = price_;
         _disclosedAddresses.push(msg.sender);
 
@@ -65,13 +66,14 @@ contract Tender is Ownable {
         require(block.timestamp >= _disclosureEnds, "Disclosure period has not ended");
         require(_winner == address(0), "The winner has been announced");
 
-        uint256 lastAddressesIndex = _disclosedAddresses.length - 1;
+        uint256 lastAddressIndex = _disclosedAddresses.length - 1;
         for (uint256 i = orderedIndexes_.length; i != 0; --i) {
             uint256 rejectIndex = orderedIndexes_[i - 1];
             emit Rejected(_disclosedAddresses[rejectIndex]);
-            _disclosedAddresses[rejectIndex] = _disclosedAddresses[lastAddressesIndex];
+
+            _disclosedAddresses[rejectIndex] = _disclosedAddresses[lastAddressIndex];
             _disclosedAddresses.pop();
-            --lastAddressesIndex;
+            --lastAddressIndex;
         }
     }
 
