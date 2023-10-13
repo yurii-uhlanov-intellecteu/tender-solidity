@@ -19,7 +19,6 @@ contract Tender is Ownable {
     event Win(address indexed winner_);
 
     error WrongValueForHash();
-    error NoWinner();
 
     constructor(uint256 submissionPeriod_, uint256 disclosurePeriod_) Ownable(msg.sender) {
         require(submissionPeriod_ != 0, "Submission period should be positive");
@@ -44,13 +43,7 @@ contract Tender is Ownable {
         require(block.timestamp >= _submissionEnds, "Disclosure period has not started yet");
         require(price_ != 0, "Invalid price");
 
-        bytes memory bites = new bytes(64);
-        assembly { 
-            mstore(add(bites, 32), price_)
-            mstore(add(bites, 64), salt_)
-        }
-
-        if (_submittedHashes[msg.sender] != keccak256(bites)) {
+        if (_submittedHashes[msg.sender] != keccak256(abi.encode(price_, salt_))) {
             revert WrongValueForHash();
         }
 
@@ -80,19 +73,17 @@ contract Tender is Ownable {
     function announceWinner() external onlyOwner {
         require(block.timestamp >= _disclosureEnds, "Disclosure period has not ended");
         require(_winner == address(0), "The winner has been announced");
+        require(_disclosedAddresses.length != 0, "No participants to choose the winner from");
 
         address[] memory addressesCopy = _disclosedAddresses;
-
-        if (addressesCopy.length == 0) {
-            revert NoWinner();
-        }
 
         address winner = addressesCopy[0];
         uint256 winningPrice = _disclosedPrices[winner];
         for (uint256 i = 1; i < addressesCopy.length; ++i) {
             address currentAddress = addressesCopy[i];
-            if (_disclosedPrices[currentAddress] < winningPrice) {
-                winningPrice = _disclosedPrices[currentAddress];
+            uint256 currentPrice = _disclosedPrices[currentAddress];
+            if (currentPrice < winningPrice) {
+                winningPrice = currentPrice;
                 winner = currentAddress;
             }
         }
